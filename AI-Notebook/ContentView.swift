@@ -5,26 +5,24 @@ struct ContentView: View {
     @State private var drawing = PKDrawing()
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(UIColor.secondarySystemBackground)
-                    .ignoresSafeArea()
+        ZStack(alignment: .topTrailing) {
+            PencilCanvasView(drawing: $drawing)
+                .background(Color(UIColor.systemBackground))
+                .ignoresSafeArea()
 
-                PencilCanvasView(drawing: $drawing)
-                    .background(Color(UIColor.systemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                    .padding()
+            Button {
+                drawing = PKDrawing()
+            } label: {
+                Label("Clear", systemImage: "trash")
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear") {
-                        drawing = PKDrawing()
-                    }
-                }
-            }
-            .toolbar(.visible, for: .navigationBar)
+            .buttonStyle(.plain)
+            .padding(.top, 20)
+            .padding(.trailing, 20)
         }
+        .background(Color(UIColor.secondarySystemBackground))
     }
 }
 
