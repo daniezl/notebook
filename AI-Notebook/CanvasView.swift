@@ -14,11 +14,12 @@ struct PencilCanvasView: UIViewRepresentable {
         canvasView.drawing = drawing
         canvasView.delegate = context.coordinator
         canvasView.drawingPolicy = .anyInput
-        canvasView.allowsFingerDrawing = true
         canvasView.tool = PKInkingTool(.pen, color: .label, width: 5)
         canvasView.backgroundColor = .clear
         canvasView.minimumZoomScale = 1.0
         canvasView.maximumZoomScale = 1.0
+
+        context.coordinator.registerPencilPreferenceObserver(for: canvasView)
 
         DispatchQueue.main.async {
             context.coordinator.showToolPicker(for: canvasView)
@@ -32,6 +33,8 @@ struct PencilCanvasView: UIViewRepresentable {
             uiView.drawing = drawing
         }
 
+        context.coordinator.registerPencilPreferenceObserver(for: uiView)
+
         DispatchQueue.main.async {
             context.coordinator.showToolPicker(for: uiView)
         }
@@ -40,6 +43,8 @@ struct PencilCanvasView: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         private var drawing: Binding<PKDrawing>
         private var toolPicker: PKToolPicker?
+        private weak var observedCanvasView: PKCanvasView?
+        private var pencilPreferenceObserver: NSObjectProtocol?
 
         init(drawing: Binding<PKDrawing>) {
             self.drawing = drawing
@@ -47,6 +52,30 @@ struct PencilCanvasView: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             drawing.wrappedValue = canvasView.drawing
+        }
+
+        func registerPencilPreferenceObserver(for canvasView: PKCanvasView) {
+            observedCanvasView = canvasView
+            updateFingerDrawingPolicy(for: canvasView)
+
+            guard pencilPreferenceObserver == nil else { return }
+
+            pencilPreferenceObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self, let canvasView = self.observedCanvasView else { return }
+                self.updateFingerDrawingPolicy(for: canvasView)
+            }
+        }
+
+        private func updateFingerDrawingPolicy(for canvasView: PKCanvasView) {
+            if #available(iOS 14.0, *) {
+                canvasView.allowsFingerDrawing = !UIPencilInteraction.prefersPencilOnlyDrawing
+            } else {
+                canvasView.allowsFingerDrawing = true
+            }
         }
 
         func showToolPicker(for canvasView: PKCanvasView) {
@@ -81,6 +110,12 @@ struct PencilCanvasView: UIViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak canvasView] in
                 guard let self, let canvasView else { return }
                 self.showToolPicker(for: canvasView)
+            }
+        }
+
+        deinit {
+            if let observer = pencilPreferenceObserver {
+                NotificationCenter.default.removeObserver(observer)
             }
         }
     }
