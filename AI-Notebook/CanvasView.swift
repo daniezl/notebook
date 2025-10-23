@@ -1,5 +1,6 @@
 import SwiftUI
 import PencilKit
+import UIKit
 
 struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
@@ -13,10 +14,16 @@ struct PencilCanvasView: UIViewRepresentable {
         canvasView.drawing = drawing
         canvasView.delegate = context.coordinator
         canvasView.drawingPolicy = .anyInput
+        canvasView.allowsFingerDrawing = true
+        canvasView.tool = PKInkingTool(.pen, color: .label, width: 5)
         canvasView.backgroundColor = .clear
         canvasView.minimumZoomScale = 1.0
         canvasView.maximumZoomScale = 1.0
-        context.coordinator.observeToolPicker(for: canvasView)
+
+        DispatchQueue.main.async {
+            context.coordinator.showToolPicker(for: canvasView)
+        }
+
         return canvasView
     }
 
@@ -24,12 +31,15 @@ struct PencilCanvasView: UIViewRepresentable {
         if uiView.drawing != drawing {
             uiView.drawing = drawing
         }
+
+        DispatchQueue.main.async {
+            context.coordinator.showToolPicker(for: uiView)
+        }
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         private var drawing: Binding<PKDrawing>
         private var toolPicker: PKToolPicker?
-        private weak var canvasView: PKCanvasView?
 
         init(drawing: Binding<PKDrawing>) {
             self.drawing = drawing
@@ -39,26 +49,39 @@ struct PencilCanvasView: UIViewRepresentable {
             drawing.wrappedValue = canvasView.drawing
         }
 
-        func observeToolPicker(for canvasView: PKCanvasView) {
-            self.canvasView = canvasView
-
-            if let window = canvasView.window {
-                attachToolPicker(to: canvasView, in: window)
-            } else {
-                DispatchQueue.main.async { [weak self, weak canvasView] in
-                    guard let self, let canvasView, let window = canvasView.window else { return }
-                    self.attachToolPicker(to: canvasView, in: window)
-                }
+        func showToolPicker(for canvasView: PKCanvasView) {
+            guard let targetWindow = canvasView.window ?? UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow || $0.windowScene?.activationState == .foregroundActive }) else {
+                retryShowToolPicker(for: canvasView)
+                return
             }
+
+            let picker: PKToolPicker
+            if let sharedPicker = PKToolPicker.shared(for: targetWindow) {
+                picker = sharedPicker
+            } else if let cachedPicker = toolPicker {
+                picker = cachedPicker
+            } else {
+                picker = PKToolPicker()
+            }
+
+            toolPicker = picker
+            picker.addObserver(canvasView)
+
+            if !canvasView.isFirstResponder {
+                canvasView.becomeFirstResponder()
+            }
+
+            picker.setVisible(true, forFirstResponder: canvasView)
         }
 
-        private func attachToolPicker(to canvasView: PKCanvasView, in window: UIWindow) {
-            let picker = PKToolPicker.shared(for: window) ?? PKToolPicker()
-            picker.addObserver(canvasView)
-            picker.setVisible(true, forFirstResponder: canvasView)
-            picker.selectedTool = PKInkingTool(.pen, color: .label, width: 5)
-            canvasView.becomeFirstResponder()
-            toolPicker = picker
+        private func retryShowToolPicker(for canvasView: PKCanvasView) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak canvasView] in
+                guard let self, let canvasView else { return }
+                self.showToolPicker(for: canvasView)
+            }
         }
     }
 }
