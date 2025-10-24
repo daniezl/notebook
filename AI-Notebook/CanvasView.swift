@@ -16,9 +16,8 @@ struct PencilCanvasView: UIViewRepresentable {
         canvasView.drawingPolicy = .anyInput
         canvasView.tool = PKInkingTool(.pen, color: .label, width: 5)
         canvasView.backgroundColor = .clear
-        canvasView.minimumZoomScale = 1.0
-        canvasView.maximumZoomScale = 1.0
 
+        context.coordinator.configureFreeformCanvas(for: canvasView)
         context.coordinator.registerPencilPreferenceObserver(for: canvasView)
 
         DispatchQueue.main.async {
@@ -33,6 +32,7 @@ struct PencilCanvasView: UIViewRepresentable {
             uiView.drawing = drawing
         }
 
+        context.coordinator.configureFreeformCanvas(for: uiView)
         context.coordinator.registerPencilPreferenceObserver(for: uiView)
 
         DispatchQueue.main.async {
@@ -41,10 +41,15 @@ struct PencilCanvasView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
+        private let baseCanvasSize = CGSize(width: 8192, height: 8192)
         private var drawing: Binding<PKDrawing>
         private var toolPicker: PKToolPicker?
         private weak var observedCanvasView: PKCanvasView?
         private var pencilPreferenceObserver: NSObjectProtocol?
+        private var hasInitializedViewport = false
+        private var hasUserAdjustedViewport = false
+        private var lastViewportSize: CGSize = .zero
+        private var initialContentOffset: CGPoint = .zero
 
         init(drawing: Binding<PKDrawing>) {
             self.drawing = drawing
@@ -52,6 +57,74 @@ struct PencilCanvasView: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             drawing.wrappedValue = canvasView.drawing
+        }
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard let canvasView = scrollView as? PKCanvasView else { return }
+            observedCanvasView = canvasView
+
+            guard hasInitializedViewport, !hasUserAdjustedViewport else { return }
+
+            let deltaX = abs(scrollView.contentOffset.x - initialContentOffset.x)
+            let deltaY = abs(scrollView.contentOffset.y - initialContentOffset.y)
+
+            if deltaX > 2 || deltaY > 2 {
+                hasUserAdjustedViewport = true
+            }
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            guard scrollView is PKCanvasView else { return }
+            hasUserAdjustedViewport = true
+        }
+
+
+        func configureFreeformCanvas(for canvasView: PKCanvasView) {
+            canvasView.isScrollEnabled = true
+            canvasView.bounces = false
+            canvasView.bouncesZoom = false
+            canvasView.alwaysBounceVertical = false
+            canvasView.alwaysBounceHorizontal = false
+            canvasView.decelerationRate = UIScrollView.DecelerationRate(rawValue: 0)
+            canvasView.minimumZoomScale = 0.05
+            canvasView.maximumZoomScale = 4.0
+            canvasView.contentInsetAdjustmentBehavior = .never
+            canvasView.contentSize = baseCanvasSize
+
+            let viewportSize = CGSize(width: ceil(canvasView.bounds.width), height: ceil(canvasView.bounds.height))
+            let viewportChanged = abs(viewportSize.width - lastViewportSize.width) > 1 || abs(viewportSize.height - lastViewportSize.height) > 1
+
+            if observedCanvasView !== canvasView {
+                observedCanvasView = canvasView
+                hasInitializedViewport = false
+                hasUserAdjustedViewport = false
+                lastViewportSize = viewportSize
+            } else if viewportChanged {
+                lastViewportSize = viewportSize
+            }
+
+            if !hasInitializedViewport || (viewportChanged && !hasUserAdjustedViewport) {
+                applyInitialViewport(for: canvasView)
+            }
+        }
+
+        private func applyInitialViewport(for canvasView: PKCanvasView) {
+            let size = baseCanvasSize
+            guard size.width > 0, size.height > 0, canvasView.bounds.width > 0, canvasView.bounds.height > 0 else {
+                hasInitializedViewport = false
+                return
+            }
+
+            let inset = canvasView.adjustedContentInset
+            let offset = CGPoint(
+                x: max((size.width - canvasView.bounds.width) / 2 - inset.left, -inset.left),
+                y: max((size.height - canvasView.bounds.height) / 2 - inset.top, -inset.top)
+            )
+
+            initialContentOffset = offset
+            canvasView.setContentOffset(offset, animated: false)
+            hasInitializedViewport = true
+            hasUserAdjustedViewport = false
+            lastViewportSize = CGSize(width: ceil(canvasView.bounds.width), height: ceil(canvasView.bounds.height))
         }
 
         func registerPencilPreferenceObserver(for canvasView: PKCanvasView) {
