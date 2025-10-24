@@ -5,8 +5,10 @@ import UIKit
 struct ContentView: View {
     @State private var drawing = PKDrawing()
     @AppStorage("selectedBackgroundPresetID") private var storedBackgroundPresetID: String = ""
+    @AppStorage("hasUserSelectedBackgroundPreset") private var hasUserSelectedBackgroundPreset = false
     @State private var selectedBackgroundPreset = BackgroundPreset.white.id
     @State private var hasInitializedPreset = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var selectedPreset: BackgroundPreset {
         BackgroundPreset.presets.first(where: { $0.id == selectedBackgroundPreset }) ?? .white
@@ -30,8 +32,7 @@ struct ContentView: View {
                         Section(category.title) {
                             ForEach(BackgroundPreset.presets.filter { $0.category == category }) { preset in
                                 Button {
-                                    selectedBackgroundPreset = preset.id
-                                    storedBackgroundPresetID = preset.id
+                                    applyPreset(preset, markAsUserSelection: true)
                                 } label: {
                                     HStack(spacing: 8) {
                                         Circle()
@@ -71,17 +72,51 @@ struct ContentView: View {
         .preferredColorScheme(selectedPreset.preferredColorScheme)
         .onAppear {
             guard !hasInitializedPreset else { return }
+            initializePresetIfNeeded()
+            hasInitializedPreset = true
+        }
+        .onChange(of: colorScheme) { _ in
+            guard hasInitializedPreset else { return }
+            initializePresetIfNeeded()
+        }
+    }
 
-            if storedBackgroundPresetID.isEmpty {
-                let userInterfaceStyle = UIScreen.main.traitCollection.userInterfaceStyle
-                let defaultPreset: BackgroundPreset = (userInterfaceStyle == .dark) ? .gray : .white
-                selectedBackgroundPreset = defaultPreset.id
-                storedBackgroundPresetID = defaultPreset.id
-            } else {
-                selectedBackgroundPreset = storedBackgroundPresetID
+    private func initializePresetIfNeeded() {
+        let preferredDefault: BackgroundPreset = (colorScheme == .dark) ? .gray : .white
+
+        if storedBackgroundPresetID.isEmpty {
+            applyPreset(preferredDefault, markAsUserSelection: false)
+            return
+        }
+
+        if let storedPreset = BackgroundPreset.presets.first(where: { $0.id == storedBackgroundPresetID }) {
+            if !hasUserSelectedBackgroundPreset {
+                if storedPreset.id == BackgroundPreset.cream.id,
+                   preferredDefault.category == .light {
+                    // Migrate legacy cream default to white for light mode if the user never made a choice.
+                    applyPreset(preferredDefault, markAsUserSelection: false)
+                    return
+                }
+
+                if storedPreset.category != preferredDefault.category {
+                    applyPreset(preferredDefault, markAsUserSelection: false)
+                    return
+                }
             }
 
-            hasInitializedPreset = true
+            selectedBackgroundPreset = storedPreset.id
+            return
+        }
+
+        applyPreset(preferredDefault, markAsUserSelection: false)
+    }
+
+    private func applyPreset(_ preset: BackgroundPreset, markAsUserSelection: Bool) {
+        selectedBackgroundPreset = preset.id
+        storedBackgroundPresetID = preset.id
+
+        if markAsUserSelection {
+            hasUserSelectedBackgroundPreset = true
         }
     }
 }
