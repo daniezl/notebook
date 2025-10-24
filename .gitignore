@@ -1,0 +1,39 @@
+# macOS
+dsym/*
+.DS_Store
+
+# Swift Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+
+# Xcode user data and state
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Xcode build artifacts
+DerivedData/
+build/
+*.moved-aside
+*.ipa
+*.dSYM
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift REPL
+swiftpm.xcodeproj/
+
+# General binary outputs
+*.o
+*.so
+*.dylib
+*.exe
+*.dll
+*.a
+
