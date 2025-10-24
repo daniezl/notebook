@@ -85,13 +85,23 @@ struct PencilCanvasView: UIViewRepresentable {
             canvasView.alwaysBounceVertical = false
             canvasView.alwaysBounceHorizontal = false
             canvasView.decelerationRate = UIScrollView.DecelerationRate(rawValue: 0)
-            canvasView.minimumZoomScale = 0.05
+            canvasView.minimumZoomScale = 0.2
             canvasView.maximumZoomScale = 4.0
             canvasView.contentInsetAdjustmentBehavior = .never
             canvasView.contentSize = baseCanvasSize
 
             let viewportSize = CGSize(width: ceil(canvasView.bounds.width), height: ceil(canvasView.bounds.height))
             let viewportChanged = abs(viewportSize.width - lastViewportSize.width) > 1 || abs(viewportSize.height - lastViewportSize.height) > 1
+
+            if viewportSize.width <= 1 || viewportSize.height <= 1 {
+                if !hasInitializedViewport {
+                    DispatchQueue.main.async { [weak self, weak canvasView] in
+                        guard let self, let canvasView else { return }
+                        self.configureFreeformCanvas(for: canvasView)
+                    }
+                }
+                return
+            }
 
             if observedCanvasView !== canvasView {
                 observedCanvasView = canvasView
@@ -116,8 +126,8 @@ struct PencilCanvasView: UIViewRepresentable {
 
             let inset = canvasView.adjustedContentInset
             let offset = CGPoint(
-                x: max((size.width - canvasView.bounds.width) / 2 - inset.left, -inset.left),
-                y: max((size.height - canvasView.bounds.height) / 2 - inset.top, -inset.top)
+                x: max(((size.width - canvasView.bounds.width) / 2 - inset.left) * 0.4, -inset.left + 200),
+                y: max(((size.height - canvasView.bounds.height) / 2 - inset.top) * 0.4, -inset.top + 150)
             )
 
             initialContentOffset = offset
