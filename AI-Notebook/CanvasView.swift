@@ -4,6 +4,7 @@ import UIKit
 
 struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
+    var backgroundColor: UIColor
 
     func makeCoordinator() -> Coordinator {
         Coordinator(drawing: $drawing)
@@ -15,7 +16,8 @@ struct PencilCanvasView: UIViewRepresentable {
         canvasView.delegate = context.coordinator
         canvasView.drawingPolicy = .anyInput
         canvasView.tool = PKInkingTool(.pen, color: .label, width: 5)
-        canvasView.backgroundColor = .clear
+        canvasView.backgroundColor = backgroundColor
+        canvasView.isOpaque = false
 
         context.coordinator.configureFreeformCanvas(for: canvasView)
         context.coordinator.registerPencilPreferenceObserver(for: canvasView)
@@ -32,6 +34,10 @@ struct PencilCanvasView: UIViewRepresentable {
             uiView.drawing = drawing
         }
 
+        if uiView.backgroundColor != backgroundColor {
+            uiView.backgroundColor = backgroundColor
+        }
+
         context.coordinator.configureFreeformCanvas(for: uiView)
         context.coordinator.registerPencilPreferenceObserver(for: uiView)
 
@@ -40,7 +46,7 @@ struct PencilCanvasView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
         private let baseCanvasSize = CGSize(width: 8192, height: 8192)
         private var drawing: Binding<PKDrawing>
         private var toolPicker: PKToolPicker?
@@ -58,6 +64,7 @@ struct PencilCanvasView: UIViewRepresentable {
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             drawing.wrappedValue = canvasView.drawing
         }
+
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             guard let canvasView = scrollView as? PKCanvasView else { return }
             observedCanvasView = canvasView
@@ -77,18 +84,20 @@ struct PencilCanvasView: UIViewRepresentable {
             hasUserAdjustedViewport = true
         }
 
-
         func configureFreeformCanvas(for canvasView: PKCanvasView) {
             canvasView.isScrollEnabled = true
+            canvasView.minimumZoomScale = 0.2
+            canvasView.maximumZoomScale = 4.0
             canvasView.bounces = false
             canvasView.bouncesZoom = false
             canvasView.alwaysBounceVertical = false
             canvasView.alwaysBounceHorizontal = false
             canvasView.decelerationRate = UIScrollView.DecelerationRate(rawValue: 0)
-            canvasView.minimumZoomScale = 0.2
-            canvasView.maximumZoomScale = 4.0
             canvasView.contentInsetAdjustmentBehavior = .never
             canvasView.contentSize = baseCanvasSize
+            canvasView.showsVerticalScrollIndicator = false
+            canvasView.showsHorizontalScrollIndicator = false
+            canvasView.delegate = self
 
             let viewportSize = CGSize(width: ceil(canvasView.bounds.width), height: ceil(canvasView.bounds.height))
             let viewportChanged = abs(viewportSize.width - lastViewportSize.width) > 1 || abs(viewportSize.height - lastViewportSize.height) > 1
