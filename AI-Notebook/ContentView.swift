@@ -49,13 +49,14 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "paintpalette")
+                    Label("Change background color", systemImage: "paintpalette")
+                        .labelStyle(.iconOnly)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
                 }
                 .accessibilityLabel("Change background color")
                 .tint(.primary)
+                .glassButtonStyle()
 
                 Button {
                     isShowingClearConfirmation = true
@@ -63,9 +64,8 @@ struct ContentView: View {
                     Label("Clear", systemImage: "trash")
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .glassButtonStyle()
                 .confirmationDialog("Clear drawing?", isPresented: $isShowingClearConfirmation, titleVisibility: .visible) {
                     Button("Clear", role: .destructive) {
                         drawing = PKDrawing()
@@ -154,6 +154,34 @@ private struct BackgroundPreset: Identifiable {
     static let black = BackgroundPreset(id: "black", name: "Black", uiColor: .black, category: .dark)
 
     static let presets: [BackgroundPreset] = [white, cream, gray, black]
+}
+
+private struct LegacyGlassButtonModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.thinMaterial)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.3), lineWidth: 0.8)
+                    )
+                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 6)
+            )
+            .clipShape(Capsule(style: .continuous))
+            .contentShape(Capsule(style: .continuous))
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func glassButtonStyle() -> some View {
+        if #available(iOS 26.0, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.modifier(LegacyGlassButtonModifier())
+        }
+    }
 }
 
 #Preview {
