@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var selectedBackgroundPreset = BackgroundPreset.white.id
     @State private var hasInitializedPreset = false
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isShowingClearConfirmation = false
 
     private var selectedPreset: BackgroundPreset {
         BackgroundPreset.presets.first(where: { $0.id == selectedBackgroundPreset }) ?? .white
@@ -57,7 +58,7 @@ struct ContentView: View {
                 .tint(.primary)
 
                 Button {
-                    drawing = PKDrawing()
+                    isShowingClearConfirmation = true
                 } label: {
                     Label("Clear", systemImage: "trash")
                         .padding(.horizontal, 14)
@@ -65,6 +66,14 @@ struct ContentView: View {
                         .background(.ultraThinMaterial, in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .confirmationDialog("Clear drawing?", isPresented: $isShowingClearConfirmation, titleVisibility: .visible) {
+                    Button("Clear", role: .destructive) {
+                        drawing = PKDrawing()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("This will remove all strokes from the current page.")
+                }
             }
             .padding(.top, 20)
             .padding(.trailing, 20)
