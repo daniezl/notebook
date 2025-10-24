@@ -1,7 +1,7 @@
 # Freeform Canvas (built with PencilKit)
 
 ### Screenshot: 
-![App screenshot](./preview.jpg)
+![App screenshot](./preview.png)
 
 A lightweight freeform drawing canvas for iPad, built using PencilKit.
 
