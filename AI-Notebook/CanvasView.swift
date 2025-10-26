@@ -54,6 +54,7 @@ struct PencilCanvasView: UIViewRepresentable {
         private var pencilPreferenceObserver: NSObjectProtocol?
         private var hasInitializedViewport = false
         private var hasUserAdjustedViewport = false
+        private var hasConfiguredContentSize = false
         private var lastViewportSize: CGSize = .zero
         private var initialContentOffset: CGPoint = .zero
 
@@ -94,7 +95,6 @@ struct PencilCanvasView: UIViewRepresentable {
             canvasView.alwaysBounceHorizontal = false
             canvasView.decelerationRate = UIScrollView.DecelerationRate(rawValue: 0)
             canvasView.contentInsetAdjustmentBehavior = .never
-            canvasView.contentSize = baseCanvasSize
             canvasView.showsVerticalScrollIndicator = false
             canvasView.showsHorizontalScrollIndicator = false
             canvasView.delegate = self
@@ -116,9 +116,15 @@ struct PencilCanvasView: UIViewRepresentable {
                 observedCanvasView = canvasView
                 hasInitializedViewport = false
                 hasUserAdjustedViewport = false
+                hasConfiguredContentSize = false
                 lastViewportSize = viewportSize
             } else if viewportChanged {
                 lastViewportSize = viewportSize
+            }
+
+            if !hasConfiguredContentSize {
+                canvasView.contentSize = baseCanvasSize
+                hasConfiguredContentSize = true
             }
 
             if !hasInitializedViewport || (viewportChanged && !hasUserAdjustedViewport) {
