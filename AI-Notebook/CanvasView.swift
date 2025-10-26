@@ -2,12 +2,65 @@ import SwiftUI
 import PencilKit
 import UIKit
 
+struct CanvasViewportState: Equatable {
+    static let offsetTolerance: CGFloat = 0.5
+    static let scaleTolerance: CGFloat = 0.01
+
+    var contentOffset: CGPoint
+    var zoomScale: CGFloat
+    var isRestoredFromPersistence: Bool
+
+    init(
+        contentOffset: CGPoint = .zero,
+        zoomScale: CGFloat = 1,
+        isRestoredFromPersistence: Bool = false
+    ) {
+        self.contentOffset = contentOffset
+        self.zoomScale = zoomScale
+        self.isRestoredFromPersistence = isRestoredFromPersistence
+    }
+
+    init(noteViewport: NoteViewport?) {
+        if let noteViewport {
+            self.contentOffset = CGPoint(
+                x: CGFloat(noteViewport.offsetX),
+                y: CGFloat(noteViewport.offsetY)
+            )
+            self.zoomScale = CGFloat(noteViewport.zoomScale)
+            self.isRestoredFromPersistence = true
+        } else {
+            self.contentOffset = .zero
+            self.zoomScale = 1
+            self.isRestoredFromPersistence = false
+        }
+    }
+
+    var isApproximatelyDefault: Bool {
+        abs(contentOffset.x) < Self.offsetTolerance &&
+            abs(contentOffset.y) < Self.offsetTolerance &&
+            abs(zoomScale - 1) < Self.scaleTolerance
+    }
+
+    func toNoteViewport() -> NoteViewport? {
+        guard !isApproximatelyDefault else {
+            return nil
+        }
+
+        return NoteViewport(
+            offsetX: Double(contentOffset.x),
+            offsetY: Double(contentOffset.y),
+            zoomScale: Double(zoomScale)
+        )
+    }
+}
+
 struct PencilCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     var backgroundColor: UIColor
+    @Binding var viewport: CanvasViewportState
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(drawing: $drawing)
+        Coordinator(drawing: $drawing, viewport: $viewport)
     }
 
     func makeUIView(context: Context) -> PKCanvasView {
@@ -49,6 +102,7 @@ struct PencilCanvasView: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate, UIScrollViewDelegate {
         private let baseCanvasSize = CGSize(width: 8192, height: 8192)
         private var drawing: Binding<PKDrawing>
+        private var viewport: Binding<CanvasViewportState>
         private var toolPicker: PKToolPicker?
         private weak var observedCanvasView: PKCanvasView?
         private var pencilPreferenceObserver: NSObjectProtocol?
@@ -58,8 +112,9 @@ struct PencilCanvasView: UIViewRepresentable {
         private var lastViewportSize: CGSize = .zero
         private var initialContentOffset: CGPoint = .zero
 
-        init(drawing: Binding<PKDrawing>) {
+        init(drawing: Binding<PKDrawing>, viewport: Binding<CanvasViewportState>) {
             self.drawing = drawing
+            self.viewport = viewport
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
@@ -69,6 +124,12 @@ struct PencilCanvasView: UIViewRepresentable {
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             guard let canvasView = scrollView as? PKCanvasView else { return }
             observedCanvasView = canvasView
+
+            updateViewportBinding(
+                offset: scrollView.contentOffset,
+                zoomScale: scrollView.zoomScale,
+                markAsRestored: false
+            )
 
             guard hasInitializedViewport, !hasUserAdjustedViewport else { return }
 
@@ -83,6 +144,11 @@ struct PencilCanvasView: UIViewRepresentable {
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             guard scrollView is PKCanvasView else { return }
             hasUserAdjustedViewport = true
+            updateViewportBinding(
+                offset: scrollView.contentOffset,
+                zoomScale: scrollView.zoomScale,
+                markAsRestored: false
+            )
         }
 
         func configureFreeformCanvas(for canvasView: PKCanvasView) {
@@ -139,17 +205,80 @@ struct PencilCanvasView: UIViewRepresentable {
                 return
             }
 
+            let storedViewport = viewport.wrappedValue
             let inset = canvasView.adjustedContentInset
-            let offset = CGPoint(
+
+            let defaultOffset = CGPoint(
                 x: max(((size.width - canvasView.bounds.width) / 2 - inset.left) * 0.4, -inset.left + 200),
                 y: max(((size.height - canvasView.bounds.height) / 2 - inset.top) * 0.4, -inset.top + 150)
             )
 
-            initialContentOffset = offset
-            canvasView.setContentOffset(offset, animated: false)
+            let hasStoredViewport = storedViewport.isRestoredFromPersistence || !storedViewport.isApproximatelyDefault
+            let shouldUseStoredViewport = hasStoredViewport
+            let desiredOffset = shouldUseStoredViewport ? storedViewport.contentOffset : defaultOffset
+            let clampedOffset = clampContentOffset(desiredOffset, for: canvasView)
+
+            let desiredZoom = shouldUseStoredViewport ? storedViewport.zoomScale : canvasView.zoomScale
+            let clampedZoom = clampZoomScale(desiredZoom, for: canvasView)
+
+            if abs(canvasView.zoomScale - clampedZoom) > 0.001 {
+                canvasView.setZoomScale(clampedZoom, animated: false)
+            }
+
             hasInitializedViewport = true
             hasUserAdjustedViewport = false
             lastViewportSize = CGSize(width: ceil(canvasView.bounds.width), height: ceil(canvasView.bounds.height))
+            initialContentOffset = clampedOffset
+
+            canvasView.setContentOffset(clampedOffset, animated: false)
+
+            updateViewportBinding(
+                offset: clampedOffset,
+                zoomScale: clampedZoom,
+                markAsRestored: false
+            )
+        }
+
+        private func clampContentOffset(_ offset: CGPoint, for canvasView: PKCanvasView) -> CGPoint {
+            let inset = canvasView.adjustedContentInset
+            let minX = -inset.left
+            let minY = -inset.top
+            let maxX = max(minX, canvasView.contentSize.width - canvasView.bounds.width + inset.right)
+            let maxY = max(minY, canvasView.contentSize.height - canvasView.bounds.height + inset.bottom)
+
+            let clampedX = min(max(offset.x, minX), maxX)
+            let clampedY = min(max(offset.y, minY), maxY)
+            return CGPoint(x: clampedX, y: clampedY)
+        }
+
+        private func clampZoomScale(_ zoomScale: CGFloat, for canvasView: PKCanvasView) -> CGFloat {
+            let minimum = canvasView.minimumZoomScale
+            let maximum = canvasView.maximumZoomScale
+            if minimum > maximum {
+                return zoomScale
+            }
+            return min(max(zoomScale, minimum), maximum)
+        }
+
+        private func updateViewportBinding(offset: CGPoint, zoomScale: CGFloat, markAsRestored: Bool) {
+            let newState = CanvasViewportState(
+                contentOffset: offset,
+                zoomScale: zoomScale,
+                isRestoredFromPersistence: markAsRestored
+            )
+            let current = viewport.wrappedValue
+            if !approximatelyEqual(current, newState) || current.isRestoredFromPersistence != newState.isRestoredFromPersistence {
+                viewport.wrappedValue = newState
+            }
+        }
+
+        private func approximatelyEqual(_ lhs: CanvasViewportState, _ rhs: CanvasViewportState) -> Bool {
+            let deltaX = abs(lhs.contentOffset.x - rhs.contentOffset.x)
+            let deltaY = abs(lhs.contentOffset.y - rhs.contentOffset.y)
+            let deltaScale = abs(lhs.zoomScale - rhs.zoomScale)
+            return deltaX < CanvasViewportState.offsetTolerance &&
+                deltaY < CanvasViewportState.offsetTolerance &&
+                deltaScale < CanvasViewportState.scaleTolerance
         }
 
         func registerPencilPreferenceObserver(for canvasView: PKCanvasView) {
